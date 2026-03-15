@@ -1,4 +1,4 @@
-# STIP-MLX: Secure Tensor Inference Protocol 
+# STIP-MLX: 安全张量推断协议  
 ## *Secure Tensor Inference Protocol*
 
 > **Apple Silicon–native · 8GB-friendly · Zero-knowledge inference in the cloud**
@@ -9,19 +9,31 @@ Private inference without heavy crypto: your data stays permuted on the wire and
 
 **Author:** Han Changshen · Founder of [NeuralZoo](https://neuralzoo.com.cn)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/) [![MLX](https://img.shields.io/badge/MLX-latest-6236FF.svg)](https://github.com/ml-explore/mlx) [![Platform: macOS](https://img.shields.io/badge/Platform-macOS%20(Apple%20Silicon)-lightgrey.svg)](https://www.apple.com/mac/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![MLX](https://img.shields.io/badge/MLX-Apple%20Silicon-000000?style=flat-square&logo=apple)](https://github.com/ml-explore/mlx)
+[![macOS](https://img.shields.io/badge/Platform-macOS-999999?style=flat-square&logo=apple)](https://www.apple.com/mac/)
 
 ---
 
 ### Data never leaves in plain form
 
-```
-  ┌─────────────────┐         ┌─────────────────────────┐         ┌─────────────────┐
-  │  🔒  Your data  │  π_in   │   ☁️  Cloud / Server     │  π_out  │  🔒  Your result │
-  │  (plaintext)    │ ──────► │   (garbled tensors only) │ ──────► │  (plaintext)    │
-  │  stays local    │  perm   │   No plaintext in memory │  align  │  stays local    │
-  └─────────────────┘         └─────────────────────────┘         └─────────────────┘
-       Client                      Sees only [0.02, -0.03, …]            Client
+```mermaid
+flowchart LR
+    subgraph Client1["Client"]
+        A["Plaintext input"]
+    end
+    subgraph Cloud["Cloud / Server"]
+        B["Permuted tensors only"]
+    end
+    subgraph Client2["Client"]
+        C["Plaintext output"]
+    end
+    A -->|π_in · permute| B
+    B -->|π_out · align| C
+    style A fill:#e8f5e9
+    style C fill:#e8f5e9
+    style B fill:#fff3e0
 ```
 
 The server never sees your prompt or the model’s real weights—only permuted floats. You get the correct answer without exposing data or model structure.
@@ -32,7 +44,21 @@ The server never sees your prompt or the model’s real weights—only permuted 
 
 **STIP** (Secure Tensor Inference Protocol) keeps user data and model structure private by running the whole inference in **permuted feature space**. On Apple Silicon (MLX):
 
-1. **Block-diagonal permutation** — Each attention head uses a small permutation π on dimension \(d_k\); the full hidden state is a block-diagonal perm: head 1 permuted by π₁, head 2 by π₂, … So \(Q,K,V\) become \(Q\pi,\,K\pi,\,V\pi\) per head. Attention scores \((Q\pi)(K\pi)^T = QK^T\) are unchanged; RMSNorm is applied with permuted γ so \(\text{RMSNorm}(x\pi) = \text{RMSNorm}(x)\pi\). The server only ever sees permuted tensors and permuted weights.
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant C as Client
+    participant S as Server
+    Dev->>C: manifest (permutation keys)
+    Dev->>S: manifest + permuted weights
+    C->>C: embed(prompt) → permute with π_in
+    C->>S: permuted tensor only
+    S->>S: forward in permuted space (36 layers)
+    S->>C: permuted logits (aligned via lm_head)
+    C->>C: decode → plaintext reply
+```
+
+1. **Block-diagonal permutation** — Each attention head uses a small permutation π on dimension $d_k$; the full hidden state is a block-diagonal perm: head 1 permuted by π₁, head 2 by π₂, … So $Q,K,V$ become $Q\pi,\,K\pi,\,V\pi$ per head. Attention scores $(Q\pi)(K\pi)^T = QK^T$ are unchanged; RMSNorm is applied with permuted γ so $\text{RMSNorm}(x\pi) = \text{RMSNorm}(x)\pi$. The server only ever sees permuted tensors and permuted weights.
 2. **No heavy crypto** — No homomorphic encryption or MPC; just indexing (permutation). Inference stays standard matmul + softmax on Metal, so it runs on consumer Macs.
 3. **End-to-end** — The client permutes the input embedding with π_in; the server runs 36 layers in permuted space; the output head is pre-permuted so logits are already in vocab order. One key (manifest) from the developer ties client and server together.
 
@@ -47,21 +73,37 @@ The server never sees your prompt or the model’s real weights—only permuted 
 ## Key features
 
 - **Privacy-preserving blind computation** — The server only ever touches **permuted (garbled) tensors**. Your prompt and embeddings never appear in plain form in server memory or on the wire; inference is correct because block-diagonal permutations preserve inner products and norms.
-- **Layer-wise continuous re-encryption** — Each layer uses its own permutation (π_in → π_out); layer \(i\)’s output is layer \(i+1\)’s permuted input. No single point in the pipeline exposes plaintext; the full chain stays private.
+- **Layer-wise continuous re-encryption** — Each layer uses its own permutation (π_in → π_out); layer $i$’s output is layer $i+1$’s permuted input. No single point in the pipeline exposes plaintext; the full chain stays private.
 - **Hardware-native optimization** — Built for **M2 Mac with 8GB RAM**: conversion is **sharded by layer** (one layer at a time), and inference loads weights in **float16** from shards with an incremental KV cache so you can run the full Qwen2.5-3B STIP model on a single machine.
 
 ---
 
 ## Visual demo: what the server sees
 
-The [web UI](https://github.com/changshenhan/STIP-MLX) has a **Cloud Server** pane that shows, in real time, the first 10 floats of the tensor the server actually receives. Here’s the idea:
+The [web UI](https://github.com/changshenhan/STIP-MLX) has a **Cloud Server** pane that shows, in real time, the first 10 floats of the tensor the server actually receives:
 
-| **You (client) see** | **Server memory (sample)** |
-|----------------------|----------------------------|
-| Plaintext prompt, e.g. *"Hello, how are you?"* | First 10 elements of the **permuted** hidden state (what the model and network see): |
-| Meaningful text and final reply | `[0.016, 0.032, -0.026, 0.036, -0.006, -0.026, -0.037, -0.006, 0.009, -0.012]` |
+```mermaid
+flowchart LR
+    subgraph Client["You (client)"]
+        P["Plaintext prompt"]
+        R["Plaintext reply"]
+    end
+    subgraph Server["Server memory"]
+        T["Permuted tensors only"]
+    end
+    P -->|π_in| T
+    T -->|aligned output| R
+    style P fill:#e8f5e9
+    style R fill:#e8f5e9
+    style T fill:#ffebee
+```
 
-The server has **no access** to your words—only to these meaningless numbers. Without the developer’s permutation keys, they cannot invert or infer the original content. The demo UI streams this contrast live so you can verify it yourself.
+| You see | Server sees |
+|---------|-------------|
+| Plaintext prompt, e.g. *"Hello, how are you?"* | First 10 floats of the **permuted** hidden state only |
+| Meaningful text and final reply | No access to words; only meaningless numbers without the developer’s keys |
+
+The demo UI streams this contrast live so you can verify it yourself.
 
 ---
 
@@ -76,8 +118,8 @@ The server has **no access** to your words—only to these meaningless numbers. 
 
 **Threat model:** The server (and any observer of network or memory) sees only permuted tensors and permuted weights. Permutation keys (seeds) are generated by the **developer** and distributed to client and server; the server never sees plaintext inputs or the original weight structure.
 
-- **Data privacy** — User input is permuted by \(\pi_{\text{in}}\) before it leaves local memory. The server receives only meaningless floats and cannot recover original semantics via statistical analysis or inversion.
-- **Model privacy** — Weights are statically permuted at conversion time. Even if weight files leak, an attacker cannot recover the original weight structure via chosen-plaintext attacks, because the permutation \(\pi\) is derived from a **dynamically generated key** (manifest seeds) not stored in the weights.
+- **Data privacy** — User input is permuted by $\pi_{\text{in}}$ before it leaves local memory. The server receives only meaningless floats and cannot recover original semantics via statistical analysis or inversion.
+- **Model privacy** — Weights are statically permuted at conversion time. Even if weight files leak, an attacker cannot recover the original weight structure via chosen-plaintext attacks, because the permutation $\pi$ is derived from a **dynamically generated key** (manifest seeds) not stored in the weights.
 - **Mathematical equivalence** — Inference in permuted space is exact. Block-diagonal permutations preserve inner products (attention) and row-wise norms (RMSNorm):
 
   $$(Q\pi)(K\pi)^T = QK^T$$
@@ -94,15 +136,15 @@ The security of STIP rests on two **invariance** properties: attention stays cor
 
 **1. Attention — inner-product invariance**
 
-With block-diagonal permutation \(\pi\) (one permutation per head), \(Q\pi\) and \(K\pi\) give the same attention scores as \(Q\) and \(K\):
+With block-diagonal permutation $\pi$ (one permutation per head), $Q\pi$ and $K\pi$ give the same attention scores as $Q$ and $K$:
 
 $$(Q\pi)(K\pi)^T = Q\pi\pi^T K^T = QK^T \quad \text{(since } \pi \text{ is orthogonal)}$$
 
-So the server can compute attention from permuted \(Q,K,V\) and get the same logits (up to the same permutation on the output, which is fixed by the pre-permuted weights and \(\gamma\)).
+So the server can compute attention from permuted $Q,K,V$ and get the same logits (up to the same permutation on the output, which is fixed by the pre-permuted weights and $\gamma$).
 
 **2. RMSNorm — rotation invariance**
 
-RMSNorm is row-wise: scale depends only on the row. Permuting columns does not change the scale. If we permute the weight \(\gamma\) the same way as the input, we get:
+RMSNorm is row-wise: scale depends only on the row. Permuting columns does not change the scale. If we permute the weight $\gamma$ the same way as the input, we get:
 
 $$\text{RMSNorm}(x\pi) = \text{RMSNorm}(x)\,\pi$$
 
@@ -165,7 +207,24 @@ Open http://127.0.0.1:7860 in your browser. Click **Load model**, then enter a p
 
 ### Three-pane demo UI
 
-The web UI is a **three-column layout** so you can see who sees what:
+The web UI uses a **three-column layout** so you can see who sees what:
+
+```mermaid
+flowchart LR
+    subgraph User["User Pane"]
+        U["Plaintext prompt & reply"]
+    end
+    subgraph Key["Key Center"]
+        K["Permutation seeds"]
+    end
+    subgraph Cloud["Cloud Server"]
+        C["Encrypted tensor sample"]
+    end
+    U ~~~ K ~~~ C
+    style User fill:#e3f2fd
+    style Key fill:#fff8e1
+    style Cloud fill:#fce4ec
+```
 
 | Pane | Role | What it shows |
 |------|------|----------------|
