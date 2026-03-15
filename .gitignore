@@ -1,0 +1,39 @@
+# Bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# STIP weights — DO NOT commit (multi-GB); keep local only
+qwen2.5-3b/
+stip_model/
+*.safetensors
+
+# Local paper copies and non-English design docs (do not commit)
+@docs/
+DESIGN_SYSTEM_*.md
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# Local config and secrets
+.env
+.env.local
+*.local
+
+# Build and dist
+build/
+dist/
+*.egg-info/
+*.egg
