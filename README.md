@@ -1,4 +1,4 @@
-# STIP-MLX: 安全张量推断协议  
+# STIP-MLX: Secure Tensor Inference Protocol（安全张量推断协议）
 ## *Secure Tensor Inference Protocol*
 
 > **Apple Silicon–native · 8GB-friendly · Zero-knowledge inference in the cloud**
